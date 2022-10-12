@@ -1,0 +1,32 @@
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      python: 3.10
+      nodejs: 16
+    commands:
+      - npm install -g aws-cdk
+  pre_build:
+    commands:
+      - export $(grep -v '^#' .env | xargs)
+      - python3 -m pip install -r requirements.txt
+      - echo "Generating swagger.json file"
+      - python3 ./scripts/swagger_file_generator.py
+      - DOCKER_REGISTRY=$AWS_ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com
+      - REPOSITORY_URI=$DOCKER_REGISTRY/swagger_ui
+      - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - echo "Build docker image Swagger UI"
+      - cd docker/ && docker build -t $REPOSITORY_URI:$IMAGE_TAG -t $REPOSITORY_URI:latest . && cd ..
+      - echo "Pushing docker image to ECR registry $REPOSITORY_URI"
+      - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $DOCKER_REGISTRY
+      - docker push $REPOSITORY_URI -a
+  build:
+    commands:
+      - echo "Collecting API vpc endpoint interface IPs"
+      - python3 ./scripts/get_api_endpoint_ips.py
+      - echo "Synthesizing CDK template for stack $PROJECT_ENVIRONMENT-$PROJECT-stack-frontend"
+      - cdk synth $PROJECT_ENVIRONMENT-$PROJECT-stack-frontend --context swagger_ui_image_tag=$IMAGE_TAG
+  post_build:
+    commands:
+      - echo "Deploying cdk template $PROJECT_ENVIRONMENT-$PROJECT-stack-frontend to $AWS_ACCOUNT/$AWS_REGION"
+      - cdk deploy $PROJECT_ENVIRONMENT-$PROJECT-stack-frontend --context swagger_ui_image_tag=$IMAGE_TAG

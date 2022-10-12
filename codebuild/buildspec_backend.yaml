@@ -1,0 +1,26 @@
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      python: 3.10
+      nodejs: 16
+    commands:
+      - npm install -g aws-cdk
+  pre_build:
+    commands:
+      - export $(grep -v '^#' .env | xargs)
+      - python3 -m pip install -r requirements.txt
+      - cdk bootstrap aws://$AWS_ACCOUNT/$AWS_REGION
+      - echo "Synthesizing CDK template for stack $PROJECT_ENVIRONMENT-$PROJECT-stack-networking"
+      - cdk synth $PROJECT_ENVIRONMENT-$PROJECT-stack-networking
+      - echo "Synthesizing CDK template for stack $PROJECT_ENVIRONMENT-$PROJECT-stack-backend"
+      - cdk synth $PROJECT_ENVIRONMENT-$PROJECT-stack-backend
+  build:
+    commands:
+      - echo "Deploying cdk template $PROJECT_ENVIRONMENT-$PROJECT-stack-networking to $AWS_ACCOUNT/$AWS_REGION"
+      - cdk deploy $PROJECT_ENVIRONMENT-$PROJECT-stack-networking
+  post_build:
+    commands:
+      - pip -q install -r lambda_layer/requirements.txt -t lambda_layer/python/
+      - echo "Deploying cdk template $PROJECT_ENVIRONMENT-$PROJECT-stack-backend to $AWS_ACCOUNT/$AWS_REGION"
+      - cdk deploy $PROJECT_ENVIRONMENT-$PROJECT-stack-backend
